@@ -9,26 +9,45 @@ import java.util.*
 data class Replacement(val from: String, val to: String, val multiple: Boolean)
 
 fun main(args: Array<String>) {
-  if (args.count() < 3 || args.count() > 4) {
-    println("Usage: kotlift src/kotlin dest/swift replacementFile.json")
-    println("or:    kotlift src/kotlin dest/swift replacementFile.json dest/test/swift")
+  if (args.count() < 4 || args.count() > 5) {
+    println("Usage: kotlift src/kotlin sources.txt dest/swift replacementFile.json")
+    println("or:    kotlift src/kotlin sources.txt dest/swift replacementFile.json dest/test/swift")
     println("calling with a test path validates all files")
     return
   }
 
-  val sourcePath = args[0]
-  val destinationPath = args[1]
-
-  // Replacement array
-  val replacements: List<Replacement> = loadReplacementList((Paths.get(args[2]).toFile()))
-  if (replacements.isEmpty()) {
-    println("replacementFile empty: ${Paths.get(args[2]).toFile().absoluteFile}")
+  val sourceDir = File(args[0])
+  if (!sourceDir.isDirectory) {
+    println("Bad source dir: ${args[0]}")
     return
   }
 
-  val sourceFiles = ArrayList<File>()
+  val sourcesTxtFile = File(args[1])
+  if (!sourcesTxtFile.isFile) {
+    println("Bad source files txt-file: ${args[1]}")
+    return
+  }
+
+  val destinationDir = File(args[2])
+  if (!destinationDir.exists() || !destinationDir.isDirectory) {
+    println("Bad destination dir: ${args[2]}")
+    return
+  }
+
+  // Replacement array
+  val replacements: List<Replacement> = loadReplacementList((Paths.get(args[3]).toFile()))
+  if (replacements.isEmpty()) {
+    println("replacementFile empty: ${Paths.get(args[3]).toFile().absoluteFile}")
+    return
+  }
+
+  val testDestinationDir = if (args.count() == 5)
+    File(args[4])
+  else
+    null
+
   val destinationFiles = ArrayList<File>()
-  listFiles(sourcePath, sourceFiles, ".kt")
+  val sourceFiles = listFiles(sourcesTxtFile, ".kt")
 
   println(replacements)
   println(sourceFiles)
@@ -45,49 +64,49 @@ fun main(args: Array<String>) {
 
   print(" finished\nTranspiling...")
 
+  val destinationPath = destinationDir.canonicalPath
   // Transpile each file
   for (file in sourceFiles) {
     val lines = Files.readAllLines(Paths.get(file.path), Charsets.UTF_8)
     val destLines = transpiler.transpile(lines)
 
-    val destPath = Paths.get(file.path.replace(sourcePath, destinationPath).replace(".kt", ".swift"))
-    destinationFiles.add(destPath.toFile())
+    val destPath = Paths.get(file.canonicalPath
+        .replace(sourceDir.canonicalPath, destinationPath)
+        .replace(".kt", ".swift"))
+    val destFile = destPath.toFile()
+    destinationFiles.add(destFile)
 
     Files.write(destPath, destLines, Charsets.UTF_8, StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING)
   }
 
   // Validate
-  if (args.count() == 4) {
+  if (testDestinationDir != null) {
     print(" finished\nValidating...  ")
     var errorCount = 0
-    val testDestinationPath = args[3]
-
-    val testDestFiles = ArrayList<File>()
-    listFiles(testDestinationPath, testDestFiles, ".swift")
-
-    if (destinationFiles.count() != testDestFiles.count()) {
-      println("ERROR: INVALID TEST FOLDER:")
-      println(destinationFiles)
-      println(testDestFiles)
-      return
-    }
-
+    val testDestinationPath = testDestinationDir.canonicalPath
     // Validate each file
-    for (i in 0..sourceFiles.count() - 1) {
-      val linesDest = Files.readAllLines(Paths.get(destinationFiles[i].path), Charsets.UTF_8)
-      val linesTest = Files.readAllLines(Paths.get(testDestFiles[i].path), Charsets.UTF_8)
+    for (destFile in destinationFiles) {
+      val testPath = Paths.get(destFile.canonicalPath
+          .replace(destinationPath, testDestinationPath))
+      if (!testPath.toFile().exists()) {
+        println("ERROR: test file not found: $testPath")
+        continue
+      }
+
+      val linesDest = Files.readAllLines(destFile.toPath(), Charsets.UTF_8)
+      val linesTest = Files.readAllLines(testPath, Charsets.UTF_8)
 
       // Check for same line count
       if (linesDest.count() != linesTest.count()) {
         errorCount++
-        validateError(destinationFiles[i].path,
+        validateError(destFile.path,
             "Invalid line count: dest=${linesDest.count()} test=${linesTest.count()}")
       } else {
         // Compare each line
         for (j in 0..linesDest.count() - 1) {
           if (linesDest[j] != linesTest[j]) {
             errorCount++
-            validateError(destinationFiles[i].path, "\n  \"${linesDest[j]}\"\n  \"${linesTest[j]}\"")
+            validateError(destFile.path, "\n  \"${linesDest[j]}\"\n  \"${linesTest[j]}\"")
           }
         }
       }

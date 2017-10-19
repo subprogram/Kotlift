@@ -1,23 +1,35 @@
 package com.moshbit.kotlift
 
 import java.io.File
+import java.nio.file.Files
+import java.nio.file.Paths
 import java.util.*
 
-fun listFiles(directoryName: String, files: ArrayList<File>, extension: String = "") {
-  val directory = File(directoryName)
-
+fun listFiles(srcFile: File, extension: String = ""): List<File> {
   // get all the files from a directory
-  val fList = directory.listFiles()?.sorted()
+  val fList = srcFile.let {
+    if (it.isDirectory)
+      it.listFiles()?.sorted()
+    else
+      readFileList(it)
+  }
 
+  val result = ArrayList<File>()
   if (fList != null) {
     for (file in fList) {
       if (file.isFile) {
         if (file.name.endsWith(extension)) {
-          files.add(file)
+          result.add(file)
         }
       } else if (file.isDirectory) {
-        listFiles(file.absolutePath, files, extension)
+        result.addAll(listFiles(file, extension))
       }
     }
   }
+  return result
+}
+
+fun readFileList(file: File): List<File> {
+  val lines = Files.readAllLines(Paths.get(file.path), Charsets.UTF_8)
+  return lines.map { File(it) }.filter { it.exists() }
 }
