@@ -147,5 +147,9 @@ gradle-app.setting
 !gradle-wrapper.jar
 
 
+### Kotlin libs ###
+lib/
+
+
 ### Kotlift ###
 dest/
